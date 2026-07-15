@@ -27,68 +27,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   // 広告用キャッシュと状態管理
   final Map<int, NativeAd> _adCache = {};
 
-  // Amazonアソシエイト関連商品の定義 (game, tech, animeの3大ジャンル)
-  final List<Map<String, dynamic>> _affiliateAds = [
-    {
-      'id': 'aff-1',
-      'title': '【最新モデル】PlayStation 5 (CFI-2000A01) 大ヒットゲーム同梱限定セット [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B0CL5N529B?tag=umaop_hackadollre-22', // AmazonアソシエイトURL (本番トラッキングID)
-      'image_url': 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=200', 
-      'source_name': 'Amazon.co.jp',
-      'published_at': DateTime.now().toIso8601String(),
-      'category': 'game',
-      'price': '￥59,980',
-    },
-    {
-      'id': 'aff-2',
-      'title': '【プログラミング効率向上】ロジクール MX KEYS mini ワイヤレス イルミネイテッド キーボード [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B09J8S2C69?tag=umaop_hackadollre-22', 
-      'image_url': 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=200', 
-      'source_name': 'Amazon.co.jp',
-      'published_at': DateTime.now().toIso8601String(),
-      'category': 'tech',
-      'price': '￥15,900',
-    },
-    {
-      'id': 'aff-3',
-      'title': '【コミック全巻セット】チェンソーマン コミックス 1-16巻セット（最新刊まで一気読み） [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B0CJR7MX8Z?tag=umaop_hackadollre-22', 
-      'image_url': 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200', 
-      'source_name': 'Amazon.co.jp',
-      'published_at': DateTime.now().toIso8601String(),
-      'category': 'anime',
-      'price': '￥8,200',
-    },
-  ];
-
-  // ユーザーのおすすめ記事から最も興味のあるジャンルを分析し、最適なアフィリエイトを返す
-  Map<String, dynamic> _getBestAffiliate() {
-    if (_recommendedArticles.isEmpty) return _affiliateAds[0];
-
-    int gameCount = 0;
-    int techCount = 0;
-    int animeCount = 0;
-
-    for (var article in _recommendedArticles) {
-      final title = (article['title'] ?? '').toString().toLowerCase();
-      if (title.contains('ゲーム') || title.contains('game') || title.contains('switch') || title.contains('ps5') || title.contains('steam')) {
-        gameCount++;
-      } else if (title.contains('ai') || title.contains('開発') || title.contains('プログラミング') || title.contains('テック') || title.contains('エンジニア')) {
-        techCount++;
-      } else if (title.contains('マンガ') || title.contains('アニメ') || title.contains('コミック') || title.contains('声優') || title.contains('劇場版')) {
-        animeCount++;
-      }
-    }
-
-    if (techCount >= gameCount && techCount >= animeCount) {
-      return _affiliateAds[1]; // テック系アフィリエイト (キーボード)
-    } else if (animeCount >= gameCount && animeCount >= techCount) {
-      return _affiliateAds[2]; // アニメ系アフィリエイト (コミックセット)
-    } else {
-      return _affiliateAds[0]; // ゲーム系アフィリエイト (PS5) (デフォルト)
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -145,12 +83,10 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       int aMatch = 0;
       int bMatch = 0;
 
-      // 1. similarity_score に基づくマッチ率算出
       if (aRaw > 0) {
         final double norm = (aRaw - 0.55) / 0.25;
         aMatch = ((norm * 38) + 60).clamp(60, 98).toInt();
       } else {
-        // 初期ダミーマッチ度の算出 (IDハッシュから一意)
         aMatch = 65 + (a['id'].toString().hashCode.abs() % 14);
       }
 
@@ -402,13 +338,80 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     );
   }
 
-  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - Amazonアソシエイト関連商品)
-  Widget _buildAffiliateCard(int index) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final affiliate = _getBestAffiliate();
-    final hasImage = affiliate['image_url'] != null;
+  // タイトルから商品名・キーワードを安全に抽出するロジック
+  String _extractSearchKeyword(String title) {
+    // 1. カギカッコ 「」 や 『』 の中身を最優先で製品・作品名として抽出
+    final bracketRegExp = RegExp(r'[「『]([^」』]{2,20})[」』]');
+    final match = bracketRegExp.firstMatch(title);
+    if (match != null) {
+      return match.group(1)!;
+    }
 
-    // アフィリエイトはユーザーの関心にマッチするため、高いマッチ率をバッジに表示
+    // 2. 【】 や [ ] で囲まれた宣伝用ヘッダーを除去
+    String cleanTitle = title
+        .replaceAll(RegExp(r'【[^】]+】'), '')
+        .replaceAll(RegExp(r'\[[^\]]+\]'), '')
+        .replaceAll(RegExp(r'\([^)]+\)'), '');
+
+    // 3. 区切り文字 (「|」「：」「 - 」) で分割し、最も名詞らしい部分を採用
+    final splitters = RegExp(r'[|：\-－／/]');
+    if (cleanTitle.contains(splitters)) {
+      final parts = cleanTitle.split(splitters);
+      for (var part in parts) {
+        final p = part.trim();
+        if (p.length >= 3 && p.length <= 15) {
+          return p;
+        }
+      }
+    }
+
+    // 4. タイトルの前半（15文字）から不要なアクション動詞を削除
+    if (cleanTitle.length > 15) {
+      cleanTitle = cleanTitle.substring(0, 15);
+    }
+    
+    cleanTitle = cleanTitle
+        .replaceAll('の予約', '')
+        .replaceAll('発売', '')
+        .replaceAll('販売', '')
+        .replaceAll('登場', '')
+        .replaceAll('開始', '')
+        .replaceAll('決定', '')
+        .replaceAll('発表', '')
+        .replaceAll('コラボ', '')
+        .replaceAll('情報', '')
+        .replaceAll('が', '')
+        .replaceAll('を', '')
+        .trim();
+
+    return cleanTitle.isNotEmpty ? cleanTitle : '人気の関連グッズ';
+  }
+
+  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - 直前の記事に完全連動するAmazonアソシエイト)
+  Widget _buildAffiliateCard(int index, Map<String, dynamic>? prevArticle) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // デフォルト（フォールバック用）
+    var title = '【Amazonアソシエイト】注目の最新ゲーム・ガジェット関連商品 [PR]';
+    var link = 'https://www.amazon.co.jp/s?k=ゲーム+ガジェット&tag=umaop_hackadollre-22';
+    var imageUrl = 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=200';
+    var sourceName = 'Amazon.co.jp';
+    var priceText = '最新価格をチェック';
+
+    // 直前の記事がある場合、そのコンテキスト（キーワード＆画像）に完全連動させる
+    if (prevArticle != null) {
+      final prevTitle = prevArticle['title'] ?? '';
+      final keyword = _extractSearchKeyword(prevTitle);
+      
+      title = '【Amazon】「$keyword」の関連商品・最安値を今すぐチェック！ [PR]';
+      link = 'https://www.amazon.co.jp/s?k=${Uri.encodeComponent(keyword)}&tag=umaop_hackadollre-22';
+      
+      if (prevArticle['image_url'] != null && prevArticle['image_url'].toString().isNotEmpty) {
+        imageUrl = prevArticle['image_url'];
+      }
+      priceText = 'Amazonポイント還元あり';
+    }
+
     final hash = index.hashCode.abs();
     final matchPercent = 90 + (hash % 9); // 90% 〜 98% マッチ
 
@@ -417,7 +420,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       margin: const EdgeInsets.symmetric(vertical: 6.0),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => _openArticle(affiliate),
+        onTap: () => _openArticle({'link': link, 'id': 'aff-$index'}),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Row(
@@ -425,23 +428,30 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
             children: [
               Stack(
                 children: [
-                  if (hasImage)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        affiliate['image_url'],
-                        width: 90,
-                        height: 90,
-                        fit: BoxFit.cover,
-                      ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      imageUrl,
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: 90,
+                          height: 90,
+                          color: isDark ? const Color(0xFF2D2D3D) : Colors.grey[200],
+                          child: const Icon(Icons.shopping_bag, color: Colors.grey),
+                        );
+                      },
                     ),
+                  ),
                   Positioned(
                     top: 4,
                     left: 4,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFF5A5F), // 広告・PR用でおすすめと区別しやすい赤/ピンク
+                        color: const Color(0xFFFF5A5F), 
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -465,7 +475,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        affiliate['title'] ?? '',
+                        title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -487,7 +497,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  affiliate['source_name'] ?? '',
+                                  sourceName,
                                   style: TextStyle(
                                     color: isDark ? const Color(0xFF3399FF) : const Color(0xFF0066CC),
                                     fontSize: 9,
@@ -497,20 +507,20 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                affiliate['price'] ?? '',
+                                priceText,
                                 style: const TextStyle(
                                   color: Color(0xFFD32F2F),
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
-                          // Amazonアソシエイト用の特別な誘導ボタン (オレンジカラー)
+                          // Amazonアソシエイト用オレンジボタン
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFF9900), // Amazon オレンジ
+                              color: const Color(0xFFFF9900), 
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Row(
@@ -597,7 +607,14 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           // 10記事ごとの差し込み位置
           if (index % (adInterval + 1) == adInterval) {
             if (isRecommended) {
-              return _buildAffiliateCard(index);
+              // 差し込み広告の直前のニュース記事を取得
+              final articleIndex = index - (index ~/ (adInterval + 1));
+              final prevArticleIndex = articleIndex - 1;
+              final prevArticle = (prevArticleIndex >= 0 && prevArticleIndex < articles.length)
+                  ? articles[prevArticleIndex]
+                  : null;
+              
+              return _buildAffiliateCard(index, prevArticle);
             } else {
               _loadAdForIndex(index);
               return _buildAdCard(index);
@@ -798,17 +815,17 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
             return <Widget>[
               SliverAppBar(
-                expandedHeight: 96.0, // ロゴの縦幅を十分に確保
-                floating: true,       // スクロールダウンで隠れ、少しのスクロールアップで再出現
-                pinned: true,         // タブバー（bottom）は画面上部に固定
-                snap: true,           // スナップイン動作
+                expandedHeight: 96.0, 
+                floating: true,       
+                pinned: true,         
+                snap: true,           
                 elevation: 0,
                 backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
                 flexibleSpace: FlexibleSpaceBar(
                   centerTitle: true,
-                  titlePadding: const EdgeInsets.only(bottom: 48), // タブの上にロゴが重ならないように調整
+                  titlePadding: const EdgeInsets.only(bottom: 48), 
                   title: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 44), // 高さを30→44に引き上げてロゴを大幅拡大
+                    constraints: const BoxConstraints(maxHeight: 44), 
                     child: Image.asset(
                       'assets/images/logo.png',
                       fit: BoxFit.contain,
