@@ -20,6 +20,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   
   bool _isLoadingAll = true;
   bool _isLoadingRecommended = true;
+  String? _authError;
 
   @override
   void initState() {
@@ -31,10 +32,30 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   }
 
   Future<void> _initApp() async {
-    await _supabaseService.signInAnonymously();
-    _loadAllArticles();
-    _loadRecommendedArticles();
-    _loadLikedArticles();
+    try {
+      final user = await _supabaseService.signInAnonymously();
+      if (user == null) {
+        setState(() {
+          _authError = '認証に失敗しました。SupabaseのAnonymous Authが有効か確認してください。';
+          _isLoadingAll = false;
+          _isLoadingRecommended = false;
+        });
+        return;
+      }
+      
+      // 認証成功後に各データをロード
+      await Future.wait([
+        _loadAllArticles(),
+        _loadRecommendedArticles(),
+        _loadLikedArticles(),
+      ]);
+    } catch (e) {
+      setState(() {
+        _authError = 'アプリ起動エラー: $e';
+        _isLoadingAll = false;
+        _isLoadingRecommended = false;
+      });
+    }
   }
 
   Future<void> _loadAllArticles() async {
@@ -83,10 +104,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       if (await canLaunchUrl(url)) {
         await launchUrl(
           url,
-          mode: LaunchMode.inAppBrowserView, // アプリ内ブラウザ（Chrome Custom Tabs / SafariViewController）で表示
+          mode: LaunchMode.inAppBrowserView, // アプリ内ブラウザで表示
         );
-        // 戻ってきたときにおすすめ情報を再読み込みして推薦をアップデート
-        _loadRecommendedArticles();
       } else {
         throw 'Could not launch $url';
       }
@@ -99,38 +118,38 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     }
   }
 
+  // お気に入りトグル：APIからの再読み込みを排除し、スクロール位置の保持と即時UI反映を両立
   Future<void> _toggleLike(String articleId) async {
-    final isLiked = await _supabaseService.toggleLikeArticle(articleId);
     setState(() {
-      if (isLiked) {
-        _likedArticleIds.add(articleId);
-      } else {
+      if (_likedArticleIds.contains(articleId)) {
         _likedArticleIds.remove(articleId);
+      } else {
+        _likedArticleIds.add(articleId);
       }
     });
-    // お気に入り状況が変わったので、おすすめリストも再読み込みして推薦モデルに学習させる
-    _loadRecommendedArticles();
+
+    // バックグラウンドでDBを更新
+    await _supabaseService.toggleLikeArticle(articleId);
   }
 
+  // 興味なし：その場でのリスト削除のみ行い、プルダウン更新まではリロードによる再出現を防止
   Future<void> _dislikeArticle(String articleId) async {
-    // 楽観的UI更新：リストから即座に非表示にしてレスポンスを改善
     setState(() {
       _allArticles.removeWhere((a) => a['id'] == articleId);
       _recommendedArticles.removeWhere((a) => a['id'] == articleId);
     });
 
-    // バックグラウンドで「興味なし」登録（他の推薦でもこの系統が排除されるようになる）
+    // バックグラウンドで「興味なし」登録
     await _supabaseService.dislikeArticle(articleId);
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('この記事を非表示にしました。好みを学習します。'),
+          content: Text('この記事を非表示にしました。'),
           duration: Duration(seconds: 2),
         ),
       );
     }
-    _loadRecommendedArticles();
   }
 
   String _formatDate(String isoString) {
@@ -203,6 +222,24 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   }
 
   Widget _buildArticleList(List<Map<String, dynamic>> articles, bool isLoading, VoidCallback onRefresh, {bool isRecommended = false}) {
+    if (_authError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(_authError!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: _initApp, child: const Text('再試行')),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (isLoading) {
       return _buildShimmerList();
     }
@@ -229,6 +266,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       color: const Color(0xFF00CC99),
       onRefresh: () async => onRefresh(),
       child: ListView.builder(
+        // PageStorageKey を付与することで、タブ切り替えや再ビルド時にスクロール位置を完全に維持
+        key: PageStorageKey(isRecommended ? 'rec_list_key' : 'all_list_key'),
         padding: const EdgeInsets.all(8.0),
         itemCount: articles.length,
         itemBuilder: (context, index) {
@@ -237,21 +276,23 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           final hasImage = article['image_url'] != null && article['image_url'].toString().isNotEmpty;
           final isLiked = _likedArticleIds.contains(articleId);
 
-          // コサイン類似度のスコア（0.0 〜 1.0）を % に変換（E5モデルのスコア範囲に応じたスケーリング）
-          // スコアが 0.7 以下の場合は底上げし、リアルで見栄えの良いマッチ度を算出します
-          final rawScore = article['similarity_score'] as double? ?? 0.0;
+          // similarity_score のパースを double.tryParse で安全に行い、キャストエラーによる 0.0 へのフォールバックを防ぐ
+          final rawScore = double.tryParse(article['similarity_score']?.toString() ?? '') ?? 0.0;
+          
+          // E5モデルの類似度（通常 0.70〜0.90）をパーセント風に見栄え良くマッピング
+          // 履歴が存在しない（rawScore == 0.0）場合はバッジを表示しない
           final int matchPercent = rawScore > 0
-              ? (((rawScore - 0.5) / 0.5 * 100).clamp(50, 99)).toInt()
+              ? (((rawScore - 0.5) / 0.5 * 100).clamp(55, 98)).toInt()
               : 0;
 
           return Card(
+            key: ValueKey('card_$articleId'),
             margin: const EdgeInsets.symmetric(vertical: 6.0),
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () => _openArticle(article),
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
-                key: ValueKey(articleId),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -286,7 +327,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                             ),
                             child: const Icon(Icons.newspaper, color: Colors.grey, size: 36),
                           ),
-                        // おすすめタブでの「マッチ度（%）」表示バッジ
+                        // マッチ度（%）バッジ（おすすめタブかつ、スコアが算出されている場合のみ表示）
                         if (isRecommended && matchPercent > 0)
                           Positioned(
                             top: 4,
@@ -298,10 +339,10 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                '$matchPercent%',
+                                '$matchPercent% マッチ',
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 9,
+                                  fontSize: 8,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -359,7 +400,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                                     ),
                                   ],
                                 ),
-                                // アクションボタン（お気に入り＆興味なし）
+                                // アクションボタン
                                 Row(
                                   children: [
                                     // お気に入り（ハート）
