@@ -106,11 +106,15 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     });
   }
 
-  Future<void> _loadLikedArticles() async {
+  Future<void> _likedArticlesLoad() async {
     final likedIds = await _supabaseService.fetchLikedArticleIds();
     setState(() {
       _likedArticleIds = likedIds;
     });
+  }
+
+  Future<void> _loadLikedArticles() async {
+    await _likedArticlesLoad();
   }
 
   Future<void> _loadReadArticles() async {
@@ -427,38 +431,96 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     return bestKeyword;
   }
 
-  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - 周辺文脈とユーザーの好みの両方に最適化したアソシエイト)
-  Widget _buildAffiliateCard(int index, Map<String, dynamic>? prevArticle) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  // 手前10件のコンテキスト記事全体から、最も好みにマッチしたキーワードと対応する画像を抽出するロジック
+  Map<String, dynamic> _getBestAffiliateFromContext(int index, List<Map<String, dynamic>> articles) {
+    final List<Map<String, dynamic>> contextArticles = [];
     
-    // デフォルト（フォールバック用）
-    var title = '【Amazonアソシエイト】注目の最新ゲーム・ガジェット関連商品 [PR]';
-    var link = 'https://www.amazon.co.jp/s?k=ゲーム+ガジェット&tag=umaop_hackadollre-22';
+    // 現在差し込みを行っている直前の記事インデックスを逆算
+    const adInterval = 10; 
+    final currentArticleIndex = index - (index ~/ (adInterval + 1));
+    
+    // 手前10件の記事を収集
+    for (int i = 1; i <= 10; i++) {
+      final targetIndex = currentArticleIndex - i;
+      if (targetIndex >= 0 && targetIndex < articles.length) {
+        contextArticles.add(articles[targetIndex]);
+      }
+    }
+
+    // デフォルト値 (手前記事が取得できないなどのフォールバック)
+    var bestKeyword = 'ゲーム ガジェット';
     var imageUrl = 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=200';
-    var sourceName = 'Amazon.co.jp';
+    var link = 'https://www.amazon.co.jp/s?k=ゲーム+ガジェット&tag=umaop_hackadollre-22';
     var priceText = '最新価格をチェック';
 
-    // 直前の記事がある場合、そのコンテキスト（キーワード＆画像）に完全連動させる
-    if (prevArticle != null) {
-      final prevTitle = prevArticle['title'] ?? '';
-      
-      // 複数のキーワード候補を抽出
+    if (contextArticles.isEmpty) {
+      return {
+        'title': '【Amazon】注目の最新ゲーム・ガジェット関連商品 [PR]',
+        'link': link,
+        'image_url': imageUrl,
+        'priceText': priceText,
+      };
+    }
+
+    // 10件の記事タイトルすべてからキーワード候補を抽出
+    // 同時に、どのキーワードがどの画像URLから抽出されたかをマッピング保持（画像のシンクロ化）
+    final Map<String, String> keywordToImageUrl = {};
+    final List<String> allCandidates = [];
+
+    for (var article in contextArticles) {
+      final prevTitle = article['title'] ?? '';
       final candidates = _extractCandidateKeywords(prevTitle);
       
-      // フォールバック用のキーワード
-      final defaultKeyword = prevTitle.substring(0, prevTitle.length > 8 ? 8 : prevTitle.length);
+      final artImgUrl = (article['image_url'] ?? '').toString();
       
-      // ユーザーの関心に最も関連度の高いキーワードを選択
-      final keyword = _selectBestKeyword(candidates, defaultKeyword);
+      for (var cand in candidates) {
+        allCandidates.add(cand);
+        if (artImgUrl.isNotEmpty && !keywordToImageUrl.containsKey(cand)) {
+          keywordToImageUrl[cand] = artImgUrl;
+        }
+      }
+    }
+
+    // 10件分のキーワード候補の中から、ユーザーの好みに最も適合するものを選択
+    if (allCandidates.isNotEmpty) {
+      // デフォルトフォールバックは直前1件目の最初のキーワード
+      final firstArticleTitle = contextArticles.first['title'] ?? '';
+      final firstArticleCandidates = _extractCandidateKeywords(firstArticleTitle);
+      final defaultKeyword = firstArticleCandidates.isNotEmpty 
+          ? firstArticleCandidates.first 
+          : firstArticleTitle.substring(0, firstArticleTitle.length > 8 ? 8 : firstArticleTitle.length);
       
-      title = '【Amazon】「$keyword」の関連商品・最安値を今すぐチェック！ [PR]';
-      link = 'https://www.amazon.co.jp/s?k=${Uri.encodeComponent(keyword)}&tag=umaop_hackadollre-22';
+      bestKeyword = _selectBestKeyword(allCandidates, defaultKeyword);
+      link = 'https://www.amazon.co.jp/s?k=${Uri.encodeComponent(bestKeyword)}&tag=umaop_hackadollre-22';
       
-      if (prevArticle['image_url'] != null && prevArticle['image_url'].toString().isNotEmpty) {
-        imageUrl = prevArticle['image_url'];
+      // 画像は選択されたキーワードに紐づく記事画像をそのまま使用（完全一致ビジュアル）
+      if (keywordToImageUrl.containsKey(bestKeyword)) {
+        imageUrl = keywordToImageUrl[bestKeyword]!;
+      } else if (contextArticles.first['image_url'] != null) {
+        imageUrl = contextArticles.first['image_url'];
       }
       priceText = 'Amazonポイント還元あり';
     }
+
+    return {
+      'title': '【Amazon】「$bestKeyword」の関連商品・最安値を今すぐチェック！ [PR]',
+      'link': link,
+      'image_url': imageUrl,
+      'priceText': priceText,
+    };
+  }
+
+  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - 直前10件のコンテキストとユーザーの好みの両方に最適化したアソシエイト)
+  Widget _buildAffiliateCard(int index, List<Map<String, dynamic>> articles) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    // コンテキスト分析エンジンから最適なアフィリエイト情報を動的生成
+    final affiliate = _getBestAffiliateFromContext(index, articles);
+    final link = affiliate['link'] ?? '';
+    final imageUrl = affiliate['image_url'] ?? '';
+    final title = affiliate['title'] ?? '';
+    final priceText = affiliate['priceText'] ?? '最新価格を表示';
+    final sourceName = 'Amazon.co.jp';
 
     final hash = index.hashCode.abs();
     final matchPercent = 90 + (hash % 9); // 90% 〜 98% マッチ
@@ -655,14 +717,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           // 10記事ごとの差し込み位置
           if (index % (adInterval + 1) == adInterval) {
             if (isRecommended) {
-              // 差し込み広告の直前のニュース記事を取得
-              final articleIndex = index - (index ~/ (adInterval + 1));
-              final prevArticleIndex = articleIndex - 1;
-              final prevArticle = (prevArticleIndex >= 0 && prevArticleIndex < articles.length)
-                  ? articles[prevArticleIndex]
-                  : null;
-              
-              return _buildAffiliateCard(index, prevArticle);
+              return _buildAffiliateCard(index, articles);
             } else {
               _loadAdForIndex(index);
               return _buildAdCard(index);
