@@ -361,8 +361,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 5記事ごとに広告を差し込むための計算
-    const adInterval = 5; 
+    // 10記事ごとに広告を差し込むための計算
+    const adInterval = 10; 
     final totalItems = articles.length + (articles.length ~/ adInterval);
 
     return RefreshIndicator(
