@@ -175,4 +175,26 @@ class SupabaseService {
       return {};
     }
   }
+
+  /// ユーザーが閲覧またはお気に入り登録した既読記事のIDセットを取得します。
+  Future<Set<String>> fetchReadArticleIds() async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+
+    try {
+      final response = await client
+          .from('user_history')
+          .select('article_id')
+          .eq('user_id', userId)
+          .inFilter('action_type', ['read', 'like']);
+      
+      final ids = List<Map<String, dynamic>>.from(response)
+          .map((row) => row['article_id'].toString())
+          .toSet();
+      return ids;
+    } catch (e) {
+      print('既読一覧取得エラー: $e');
+      return {};
+    }
+  }
 }

@@ -17,6 +17,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   List<Map<String, dynamic>> _allArticles = [];
   List<Map<String, dynamic>> _recommendedArticles = [];
   Set<String> _likedArticleIds = {};
+  Set<String> _readArticleIds = {};
   
   bool _isLoadingAll = true;
   bool _isLoadingRecommended = true;
@@ -48,6 +49,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         _loadAllArticles(),
         _loadRecommendedArticles(),
         _loadLikedArticles(),
+        _loadReadArticles(),
       ]);
     } catch (e) {
       setState(() {
@@ -83,6 +85,13 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     });
   }
 
+  Future<void> _loadReadArticles() async {
+    final readIds = await _supabaseService.fetchReadArticleIds();
+    setState(() {
+      _readArticleIds = readIds;
+    });
+  }
+
   Future<void> _openArticle(Map<String, dynamic> article) async {
     final urlString = article['link'] ?? '';
     if (urlString.isEmpty) return;
@@ -96,9 +105,16 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       }
       return;
     }
+
+    final articleId = article['id'].toString();
+    
+    // 即座に既読表示に更新（楽観的UI更新）
+    setState(() {
+      _readArticleIds.add(articleId);
+    });
     
     // 閲覧ログの送信（非同期）
-    _supabaseService.logArticleView(article['id']);
+    _supabaseService.logArticleView(articleId);
     
     try {
       if (await canLaunchUrl(url)) {
@@ -276,14 +292,17 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           final hasImage = article['image_url'] != null && article['image_url'].toString().isNotEmpty;
           final isLiked = _likedArticleIds.contains(articleId);
 
-          // similarity_score のパースを double.tryParse で安全に行い、キャストエラーによる 0.0 へのフォールバックを防ぐ
+          // similarity_score のパースを double.tryParse で安全に行う
           final rawScore = double.tryParse(article['similarity_score']?.toString() ?? '') ?? 0.0;
           
-          // E5モデルの類似度（通常 0.70〜0.90）をパーセント風に見栄え良くマッピング
-          // 履歴が存在しない（rawScore == 0.0）場合はバッジを表示しない
+          // E5モデルの類似度（通常 0.70〜0.90）の分布（0.55〜0.80の範囲）を 60%〜98% に動的マッピング
+          // これにより、55%付近に張り付く問題を解消し、ユーザーの好みとのマッチ度をリアルに変化させます
+          final double normalized = (rawScore - 0.55) / 0.25;
           final int matchPercent = rawScore > 0
-              ? (((rawScore - 0.5) / 0.5 * 100).clamp(55, 98)).toInt()
+              ? ((normalized * 38) + 60).clamp(60, 98).toInt()
               : 0;
+
+          final isRead = _readArticleIds.contains(articleId);
 
           return Card(
             key: ValueKey('card_$articleId'),
@@ -365,8 +384,10 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.black87,
+                                fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+                                color: isRead
+                                    ? (isDark ? Colors.grey[600] : Colors.grey[500])
+                                    : (isDark ? Colors.white : Colors.black87),
                                 height: 1.3,
                               ),
                             ),

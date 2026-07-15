@@ -35,7 +35,6 @@ returns table (
   image_url text,
   source_name text,
   published_at timestamp with time zone,
-  created_at timestamp with time zone,
   similarity_score double precision -- 類似度スコア (0.0 〜 1.0)
 ) as $$
 declare
@@ -74,7 +73,7 @@ begin
   -- 3. 履歴が空（新規ユーザー）の場合は、新着順で降順表示（類似度は0.0とする）
   if user_profile_vector is null then
     return query
-    select a.id, a.title, a.link, a.image_url, a.source_name, a.published_at, a.created_at, 0.0::double precision as similarity_score
+    select a.id, a.title, a.link, a.image_url, a.source_name, a.published_at, 0.0::double precision as similarity_score
     from articles a
     order by a.published_at desc
     limit match_limit;
@@ -88,8 +87,7 @@ begin
       a.link, 
       a.image_url, 
       a.source_name, 
-      a.published_at, 
-      a.created_at,
+      a.published_at,
       (
         -- コサイン類似度 (1 - distance)
         (1.0 - (a.embedding <=> user_profile_vector)) 
