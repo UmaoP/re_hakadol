@@ -32,7 +32,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     {
       'id': 'aff-1',
       'title': '【最新モデル】PlayStation 5 (CFI-2000A01) 大ヒットゲーム同梱限定セット [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B0CL5N529B?tag=hakadollre-22', // AmazonアソシエイトURL (プレースホルダーID)
+      'link': 'https://www.amazon.co.jp/dp/B0CL5N529B?tag=umaop_hackadollre-22', // AmazonアソシエイトURL (本番トラッキングID)
       'image_url': 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=200', 
       'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
@@ -42,7 +42,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     {
       'id': 'aff-2',
       'title': '【プログラミング効率向上】ロジクール MX KEYS mini ワイヤレス イルミネイテッド キーボード [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B09J8S2C69?tag=hakadollre-22', 
+      'link': 'https://www.amazon.co.jp/dp/B09J8S2C69?tag=umaop_hackadollre-22', 
       'image_url': 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=200', 
       'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
@@ -52,7 +52,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     {
       'id': 'aff-3',
       'title': '【コミック全巻セット】チェンソーマン コミックス 1-16巻セット（最新刊まで一気読み） [PR]',
-      'link': 'https://www.amazon.co.jp/dp/B0CJR7MX8Z?tag=hakadollre-22', 
+      'link': 'https://www.amazon.co.jp/dp/B0CJR7MX8Z?tag=umaop_hackadollre-22', 
       'image_url': 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200', 
       'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
