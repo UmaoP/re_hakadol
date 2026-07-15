@@ -561,26 +561,12 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                color: Color(0xFF00CC99),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.bolt, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'ハッカドール：Re',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black87,
-              ),
-            ),
-          ],
+        title: Image.asset(
+          'assets/images/logo.png',
+          height: 38,
+          fit: BoxFit.contain,
         ),
+        centerTitle: true,
         backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
         elevation: 0,
         bottom: TabBar(
