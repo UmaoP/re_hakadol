@@ -918,23 +918,17 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
             return <Widget>[
               SliverAppBar(
-                expandedHeight: 96.0, 
                 floating: true,       
                 pinned: true,         
                 snap: true,           
                 elevation: 0,
                 backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
-                flexibleSpace: FlexibleSpaceBar(
-                  centerTitle: true,
-                  titlePadding: const EdgeInsets.only(bottom: 48), 
-                  title: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 44), 
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
+                title: Image.asset(
+                  'assets/images/logo.png',
+                  height: 42,
+                  fit: BoxFit.contain,
                 ),
+                centerTitle: true,
                 bottom: TabBar(
                   controller: _tabController,
                   labelColor: const Color(0xFF00CC99),
