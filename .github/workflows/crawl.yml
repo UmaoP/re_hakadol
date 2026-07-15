@@ -2,7 +2,7 @@ name: News Crawler
 
 on:
   schedule:
-    - cron: '0 * * * *' # 毎時0分に実行
+    - cron: '25 * * * *' # 毎時25分に実行（毎時0分はGitHubの負荷が高く遅延・スキップが頻発するため）
   workflow_dispatch: # 手動実行も可能
 
 jobs:
