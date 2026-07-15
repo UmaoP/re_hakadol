@@ -1,0 +1,17 @@
+# Flutter
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/.env
+
+# Python
+crawler/__pycache__/
+crawler/*.pyc
+crawler/.env
+.env
+
+# OS
+.DS_Store
+Thumbs.db
