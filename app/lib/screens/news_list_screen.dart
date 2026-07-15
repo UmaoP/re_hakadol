@@ -338,56 +338,96 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     );
   }
 
-  // タイトルから商品名・キーワードを安全に抽出するロジック
-  String _extractSearchKeyword(String title) {
-    // 1. カギカッコ 「」 や 『』 の中身を最優先で製品・作品名として抽出
-    final bracketRegExp = RegExp(r'[「『]([^」』]{2,20})[」』]');
-    final match = bracketRegExp.firstMatch(title);
-    if (match != null) {
-      return match.group(1)!;
+  // セリフや無効なフレーズをフィルタリングする処理
+  bool _isValidKeyword(String text) {
+    if (text.length < 2 || text.length > 20) return false;
+    
+    // セリフ、口語表現、予約などのアクション単体フレーズを除外
+    final invalidPatterns = RegExp(
+      r'(です|ます|だっ|ください|予約開始|発売開始|決定|発表|スタート|登場|開催|コラボ|特集|情報|速報|！|？|w|www|お勧め|おすすめ|一覧|まとめ)$'
+    );
+    if (invalidPatterns.hasMatch(text)) return false;
+    
+    // 助詞を含む長文フレーズの除外
+    if (text.contains('が') || text.contains('は') || text.contains('の') || text.contains('で') || text.contains('を')) {
+      return false;
     }
+    
+    return true;
+  }
 
-    // 2. 【】 や [ ] で囲まれた宣伝用ヘッダーを除去
-    String cleanTitle = title
-        .replaceAll(RegExp(r'【[^】]+】'), '')
-        .replaceAll(RegExp(r'\[[^\]]+\]'), '')
-        .replaceAll(RegExp(r'\([^)]+\)'), '');
-
-    // 3. 区切り文字 (「|」「：」「 - 」) で分割し、最も名詞らしい部分を採用
-    final splitters = RegExp(r'[|：\-－／/]');
-    if (cleanTitle.contains(splitters)) {
-      final parts = cleanTitle.split(splitters);
-      for (var part in parts) {
-        final p = part.trim();
-        if (p.length >= 3 && p.length <= 15) {
-          return p;
-        }
+  // タイトルから複数のアフィリエイトキーワード候補を抽出するロジック
+  List<String> _extractCandidateKeywords(String title) {
+    final List<String> candidates = [];
+    
+    // 1. カギカッコ 「」 や 『』 の中身を抽出
+    final bracketRegExp = RegExp(r'[「『]([^」』]{2,20})[」』]');
+    final matches = bracketRegExp.allMatches(title);
+    for (var m in matches) {
+      final text = m.group(1)!.trim();
+      if (_isValidKeyword(text)) {
+        candidates.add(text);
       }
     }
 
-    // 4. タイトルの前半（15文字）から不要なアクション動詞を削除
-    if (cleanTitle.length > 15) {
-      cleanTitle = cleanTitle.substring(0, 15);
+    // 2. 【】 や [ ] で囲まれた宣伝用ヘッダーから抽出
+    final headerRegExp = RegExp(r'[【\[]([^】\]]{2,20})[】\]]');
+    final hMatches = headerRegExp.allMatches(title);
+    for (var m in hMatches) {
+      final text = m.group(1)!.trim();
+      if (_isValidKeyword(text)) {
+        candidates.add(text);
+      }
     }
-    
-    cleanTitle = cleanTitle
-        .replaceAll('の予約', '')
-        .replaceAll('発売', '')
-        .replaceAll('販売', '')
-        .replaceAll('登場', '')
-        .replaceAll('開始', '')
-        .replaceAll('決定', '')
-        .replaceAll('発表', '')
-        .replaceAll('コラボ', '')
-        .replaceAll('情報', '')
-        .replaceAll('が', '')
-        .replaceAll('を', '')
-        .trim();
 
-    return cleanTitle.isNotEmpty ? cleanTitle : '人気の関連グッズ';
+    // 3. 区切り記号で分割された3〜15文字のフレーズ
+    final cleanTitle = title.replaceAll(RegExp(r'[「『【\[].*?[」』】\]]'), ' ');
+    final parts = cleanTitle.split(RegExp(r'[|：\-－／/,\s]'));
+    for (var part in parts) {
+      final p = part.trim();
+      if (p.length >= 3 && p.length <= 15 && _isValidKeyword(p)) {
+        candidates.add(p);
+      }
+    }
+
+    return candidates.toSet().toList(); // 重複排除
   }
 
-  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - 直前の記事に完全連動するAmazonアソシエイト)
+  // ユーザーの興味（_recommendedArticles）に最も関連性の高いキーワードを選択
+  String _selectBestKeyword(List<String> candidates, String fallbackKeyword) {
+    if (candidates.isEmpty) return fallbackKeyword;
+    if (candidates.length == 1) return candidates.first;
+
+    String bestKeyword = candidates.first;
+    int highestScore = -1;
+
+    for (var candidate in candidates) {
+      int score = 0;
+      final lowerCandidate = candidate.toLowerCase();
+      
+      for (var article in _recommendedArticles) {
+        final recTitle = (article['title'] ?? '').toString().toLowerCase();
+        // 過去の関心に近いおすすめ記事タイトルとの部分一致を評価
+        if (recTitle.contains(lowerCandidate)) {
+          score += 5;
+        }
+      }
+      
+      // キーワードの長さ（適度な4〜10文字）へのバイアス評価
+      if (candidate.length >= 4 && candidate.length <= 10) {
+        score += 1;
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestKeyword = candidate;
+      }
+    }
+
+    return bestKeyword;
+  }
+
+  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - 周辺文脈とユーザーの好みの両方に最適化したアソシエイト)
   Widget _buildAffiliateCard(int index, Map<String, dynamic>? prevArticle) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
@@ -401,7 +441,15 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     // 直前の記事がある場合、そのコンテキスト（キーワード＆画像）に完全連動させる
     if (prevArticle != null) {
       final prevTitle = prevArticle['title'] ?? '';
-      final keyword = _extractSearchKeyword(prevTitle);
+      
+      // 複数のキーワード候補を抽出
+      final candidates = _extractCandidateKeywords(prevTitle);
+      
+      // フォールバック用のキーワード
+      final defaultKeyword = prevTitle.substring(0, prevTitle.length > 8 ? 8 : prevTitle.length);
+      
+      // ユーザーの関心に最も関連度の高いキーワードを選択
+      final keyword = _selectBestKeyword(candidates, defaultKeyword);
       
       title = '【Amazon】「$keyword」の関連商品・最安値を今すぐチェック！ [PR]';
       link = 'https://www.amazon.co.jp/s?k=${Uri.encodeComponent(keyword)}&tag=umaop_hackadollre-22';
