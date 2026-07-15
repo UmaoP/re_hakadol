@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/supabase_service.dart';
 
 class NewsListScreen extends StatefulWidget {
@@ -22,6 +23,9 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   bool _isLoadingAll = true;
   bool _isLoadingRecommended = true;
   String? _authError;
+
+  // 広告用キャッシュと状態管理
+  final Map<int, NativeAd> _adCache = {};
 
   @override
   void initState() {
@@ -92,6 +96,54 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     });
   }
 
+  // 特定インデックス用のインフィード広告をロード・キャッシュ
+  void _loadAdForIndex(int index) {
+    if (_adCache.containsKey(index)) return;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final ad = NativeAd(
+      adUnitId: 'ca-app-pub-3940256099942544/2247696110', // AdMob 公式テスト用ネイティブ広告ユニットID
+      factoryId: null, // FlutterTemplateを用いるためnullを指定
+      nativeTemplateStyle: NativeTemplateStyle(
+        templateType: TemplateType.small,
+        mainBackgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+        cornerRadius: 16.0,
+        callToActionTextStyle: NativeTemplateTextStyle(
+          textColor: Colors.white,
+          backgroundColor: const Color(0xFF00CC99),
+          style: NativeTemplateFontStyle.bold,
+          size: 12,
+        ),
+        primaryTextStyle: NativeTemplateTextStyle(
+          textColor: isDark ? Colors.white : Colors.black87,
+          style: NativeTemplateFontStyle.bold,
+          size: 13,
+        ),
+        secondaryTextStyle: NativeTemplateTextStyle(
+          textColor: Colors.grey[500],
+          size: 11,
+        ),
+      ),
+      listener: NativeAdListener(
+        onAdLoaded: (ad) {
+          if (mounted) {
+            setState(() {
+              _adCache[index] = ad as NativeAd;
+            });
+          }
+        },
+        onAdFailedToLoad: (ad, error) {
+          print('広告のロードに失敗しました (index: $index): $error');
+          ad.dispose();
+        },
+      ),
+      request: const AdRequest(),
+    );
+
+    ad.load();
+  }
+
   Future<void> _openArticle(Map<String, dynamic> article) async {
     final urlString = article['link'] ?? '';
     if (urlString.isEmpty) return;
@@ -134,7 +186,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     }
   }
 
-  // お気に入りトグル：APIからの再読み込みを排除し、スクロール位置の保持と即時UI反映を両立
   Future<void> _toggleLike(String articleId) async {
     setState(() {
       if (_likedArticleIds.contains(articleId)) {
@@ -148,7 +199,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     await _supabaseService.toggleLikeArticle(articleId);
   }
 
-  // 興味なし：その場でのリスト削除のみ行い、プルダウン更新まではリロードによる再出現を防止
   Future<void> _dislikeArticle(String articleId) async {
     setState(() {
       _allArticles.removeWhere((a) => a['id'] == articleId);
@@ -237,6 +287,39 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     );
   }
 
+  // 広告表示用のインフィード広告ウィジェット
+  Widget _buildAdCard(int index) {
+    final ad = _adCache[index];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (ad != null) {
+      return Card(
+        margin: const EdgeInsets.symmetric(vertical: 6.0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          height: 106, // ニュース記事と同等のスモールテンプレートの高さ
+          child: AdWidget(ad: ad),
+        ),
+      );
+    }
+
+    // 広告ロード中のプレースホルダー（記事のレイアウトと崩れないようにShimmerを表示）
+    return Shimmer.fromColors(
+      baseColor: isDark ? const Color(0xFF2D2D3D) : Colors.grey[300]!,
+      highlightColor: isDark ? const Color(0xFF3D3D4D) : Colors.grey[100]!,
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 6.0),
+        child: Container(
+          height: 106,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildArticleList(List<Map<String, dynamic>> articles, bool isLoading, VoidCallback onRefresh, {bool isRecommended = false}) {
     if (_authError != null) {
       return Center(
@@ -278,25 +361,38 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // 5記事ごとに広告を差し込むための計算
+    const adInterval = 5; 
+    final totalItems = articles.length + (articles.length ~/ adInterval);
+
     return RefreshIndicator(
       color: const Color(0xFF00CC99),
       onRefresh: () async => onRefresh(),
       child: ListView.builder(
-        // PageStorageKey を付与することで、タブ切り替えや再ビルド時にスクロール位置を完全に維持
         key: PageStorageKey(isRecommended ? 'rec_list_key' : 'all_list_key'),
         padding: const EdgeInsets.all(8.0),
-        itemCount: articles.length,
+        itemCount: totalItems,
         itemBuilder: (context, index) {
-          final article = articles[index];
+          // 広告を挟むインデックス（インデックスが 5, 11, 17, 23 ... の位置）
+          if (index % (adInterval + 1) == adInterval) {
+            _loadAdForIndex(index);
+            return _buildAdCard(index);
+          }
+
+          // 広告を挟んだことによる記事インデックスの調整
+          final articleIndex = index - (index ~/ (adInterval + 1));
+          
+          // 記事リストの範囲外チェック
+          if (articleIndex >= articles.length) {
+            return const SizedBox.shrink();
+          }
+
+          final article = articles[articleIndex];
           final articleId = article['id'].toString();
           final hasImage = article['image_url'] != null && article['image_url'].toString().isNotEmpty;
           final isLiked = _likedArticleIds.contains(articleId);
 
-          // similarity_score のパースを double.tryParse で安全に行う
           final rawScore = double.tryParse(article['similarity_score']?.toString() ?? '') ?? 0.0;
-          
-          // E5モデルの類似度（通常 0.70〜0.90）の分布（0.55〜0.80の範囲）を 60%〜98% に動的マッピング
-          // これにより、55%付近に張り付く問題を解消し、ユーザーの好みとのマッチ度をリアルに変化させます
           final double normalized = (rawScore - 0.55) / 0.25;
           final int matchPercent = rawScore > 0
               ? ((normalized * 38) + 60).clamp(60, 98).toInt()
@@ -315,7 +411,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 画像サムネイル
                     Stack(
                       children: [
                         if (hasImage)
@@ -346,7 +441,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                             ),
                             child: const Icon(Icons.newspaper, color: Colors.grey, size: 36),
                           ),
-                        // マッチ度（%）バッジ（おすすめタブかつ、スコアが算出されている場合のみ表示）
                         if (isRecommended && matchPercent > 0)
                           Positioned(
                             top: 4,
@@ -370,7 +464,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                       ],
                     ),
                     const SizedBox(width: 12),
-                    // 記事テキストとアクション
                     Expanded(
                       child: SizedBox(
                         height: 90,
@@ -421,10 +514,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                                     ),
                                   ],
                                 ),
-                                // アクションボタン
                                 Row(
                                   children: [
-                                    // お気に入り（ハート）
                                     IconButton(
                                       padding: EdgeInsets.zero,
                                       constraints: const BoxConstraints(),
@@ -436,7 +527,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                                       onPressed: () => _toggleLike(articleId),
                                     ),
                                     const SizedBox(width: 10),
-                                    // 興味なし（非表示）
                                     IconButton(
                                       padding: EdgeInsets.zero,
                                       constraints: const BoxConstraints(),
@@ -522,6 +612,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   @override
   void dispose() {
     _tabController.dispose();
+    // 広告リソースの解放
+    _adCache.values.forEach((ad) => ad.dispose());
     super.dispose();
   }
 }
