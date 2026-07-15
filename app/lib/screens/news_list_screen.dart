@@ -27,12 +27,66 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   // 広告用キャッシュと状態管理
   final Map<int, NativeAd> _adCache = {};
 
+  // ユーザーの興味にマッチさせるアフィリエイトPR記事の定義
+  final List<Map<String, dynamic>> _affiliateAds = [
+    {
+      'id': 'aff-1',
+      'title': '【注目！】事前登録で豪華特典が今すぐもらえる！大ヒット確実の最新ネオンアクションRPG [PR]',
+      'link': 'https://a8.net/dummy_game_campaign', // アフィリエイトURLのプレースホルダー
+      'image_url': 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=200', 
+      'source_name': '注目ゲーム事前登録',
+      'published_at': DateTime.now().toIso8601String(),
+    },
+    {
+      'id': 'aff-2',
+      'title': '【AIで爆速開発】プログラミング作業が3倍効率化する最新のAIコードアシスタントツール [PR]',
+      'link': 'https://a8.net/dummy_ai_ide',
+      'image_url': 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=200', 
+      'source_name': 'AIテック開発ツール',
+      'published_at': DateTime.now().toIso8601String(),
+    },
+    {
+      'id': 'aff-3',
+      'title': '【今だけ最大70%OFF】アニメ化記念セール開催！話題の大人気コミックが全巻お得に読める [PR]',
+      'link': 'https://a8.net/dummy_manga_sale',
+      'image_url': 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200', 
+      'source_name': 'コミック特別セール',
+      'published_at': DateTime.now().toIso8601String(),
+    },
+  ];
+
+  // ユーザーのおすすめ記事から最も興味のあるジャンルを分析し、最適なアフィリエイトを返す
+  Map<String, dynamic> _getBestAffiliate() {
+    if (_recommendedArticles.isEmpty) return _affiliateAds[0];
+
+    int gameCount = 0;
+    int techCount = 0;
+    int animeCount = 0;
+
+    for (var article in _recommendedArticles) {
+      final title = (article['title'] ?? '').toString().toLowerCase();
+      if (title.contains('ゲーム') || title.contains('game') || title.contains('switch') || title.contains('ps5') || title.contains('steam')) {
+        gameCount++;
+      } else if (title.contains('ai') || title.contains('開発') || title.contains('プログラミング') || title.contains('テック') || title.contains('エンジニア')) {
+        techCount++;
+      } else if (title.contains('マンガ') || title.contains('アニメ') || title.contains('コミック') || title.contains('声優') || title.contains('劇場版')) {
+        animeCount++;
+      }
+    }
+
+    if (techCount >= gameCount && techCount >= animeCount) {
+      return _affiliateAds[1]; // テック系アフィリエイト
+    } else if (animeCount >= gameCount && animeCount >= techCount) {
+      return _affiliateAds[2]; // アニメ系アフィリエイト
+    } else {
+      return _affiliateAds[0]; // ゲーム系アフィリエイト (デフォルト)
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
-    // 匿名サインインを実行後、データを取得
     _initApp();
   }
 
@@ -48,7 +102,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         return;
       }
       
-      // 認証成功後に各データをロード
       await Future.wait([
         _loadAllArticles(),
         _loadRecommendedArticles(),
@@ -103,8 +156,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
     final ad = NativeAd(
-      adUnitId: 'ca-app-pub-3940256099942544/2247696110', // AdMob 公式テスト用ネイティブ広告ユニットID
-      factoryId: null, // FlutterTemplateを用いるためnullを指定
+      adUnitId: 'ca-app-pub-3940256099942544/2247696110', 
+      factoryId: null, 
       nativeTemplateStyle: NativeTemplateStyle(
         templateType: TemplateType.small,
         mainBackgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
@@ -160,19 +213,19 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
     final articleId = article['id'].toString();
     
-    // 即座に既読表示に更新（楽観的UI更新）
-    setState(() {
-      _readArticleIds.add(articleId);
-    });
-    
-    // 閲覧ログの送信（非同期）
-    _supabaseService.logArticleView(articleId);
+    // アフィリエイト(IDがaff-)以外の場合のみ既読処理・ログ送信を行う
+    if (!articleId.startsWith('aff-')) {
+      setState(() {
+        _readArticleIds.add(articleId);
+      });
+      _supabaseService.logArticleView(articleId);
+    }
     
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(
           url,
-          mode: LaunchMode.inAppBrowserView, // アプリ内ブラウザで表示
+          mode: LaunchMode.inAppBrowserView, 
         );
       } else {
         throw 'Could not launch $url';
@@ -180,7 +233,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('記事を開けませんでした。')),
+          const SnackBar(content: Text('リンクを開けませんでした。')),
         );
       }
     }
@@ -194,8 +247,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         _likedArticleIds.add(articleId);
       }
     });
-
-    // バックグラウンドでDBを更新
     await _supabaseService.toggleLikeArticle(articleId);
   }
 
@@ -204,10 +255,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       _allArticles.removeWhere((a) => a['id'] == articleId);
       _recommendedArticles.removeWhere((a) => a['id'] == articleId);
     });
-
-    // バックグラウンドで「興味なし」登録
     await _supabaseService.dislikeArticle(articleId);
-    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -297,13 +345,12 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         margin: const EdgeInsets.symmetric(vertical: 6.0),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: SizedBox(
-          height: 106, // ニュース記事と同等のスモールテンプレートの高さ
+          height: 106, 
           child: AdWidget(ad: ad),
         ),
       );
     }
 
-    // 広告ロード中のプレースホルダー（記事のレイアウトと崩れないようにShimmerを表示）
     return Shimmer.fromColors(
       baseColor: isDark ? const Color(0xFF2D2D3D) : Colors.grey[300]!,
       highlightColor: isDark ? const Color(0xFF3D3D4D) : Colors.grey[100]!,
@@ -314,6 +361,138 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用)
+  Widget _buildAffiliateCard(int index) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final affiliate = _getBestAffiliate();
+    final hasImage = affiliate['image_url'] != null;
+
+    // アフィリエイトはユーザーの関心にマッチするため、高いマッチ率をバッジに表示
+    final hash = index.hashCode.abs();
+    final matchPercent = 90 + (hash % 9); // 90% 〜 98% マッチ
+
+    return Card(
+      key: ValueKey('aff_card_$index'),
+      margin: const EdgeInsets.symmetric(vertical: 6.0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openArticle(affiliate),
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  if (hasImage)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        affiliate['image_url'],
+                        width: 90,
+                        height: 90,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  Positioned(
+                    top: 4,
+                    left: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF5A5F), // 広告・PR用でおすすめと区別しやすい赤/ピンク
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$matchPercent% マッチ',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 90,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        affiliate['title'] ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87,
+                          height: 1.3,
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF4A1E1E) : const Color(0xFFFFECEC),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  affiliate['source_name'] ?? '',
+                                  style: TextStyle(
+                                    color: isDark ? const Color(0xFFFF6B6B) : const Color(0xFFD32F2F),
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '本日掲載',
+                                style: TextStyle(
+                                  color: isDark ? Colors.grey[500] : Colors.grey[600],
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // アフィリエイト用の特別な誘導バッジ
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00CC99),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              '詳細を見る',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -361,7 +540,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 10記事ごとに広告を差し込むための計算
+    // 10記事ごとに広告またはアフィリエイトを差し込むための計算
     const adInterval = 10; 
     final totalItems = articles.length + (articles.length ~/ adInterval);
 
@@ -373,16 +552,21 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         padding: const EdgeInsets.all(8.0),
         itemCount: totalItems,
         itemBuilder: (context, index) {
-          // 広告を挟むインデックス（インデックスが 5, 11, 17, 23 ... の位置）
+          // 10記事ごとの差し込み位置
           if (index % (adInterval + 1) == adInterval) {
-            _loadAdForIndex(index);
-            return _buildAdCard(index);
+            if (isRecommended) {
+              // おすすめタブではAdMobの代わりにアフィリエイトPR記事を挿入
+              return _buildAffiliateCard(index);
+            } else {
+              // すべてタブでは通常のアドモブ広告を挿入
+              _loadAdForIndex(index);
+              return _buildAdCard(index);
+            }
           }
 
-          // 広告を挟んだことによる記事インデックスの調整
+          // 差し込みによる記事インデックスの調整
           final articleIndex = index - (index ~/ (adInterval + 1));
           
-          // 記事リストの範囲外チェック
           if (articleIndex >= articles.length) {
             return const SizedBox.shrink();
           }
@@ -394,9 +578,16 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
           final rawScore = double.tryParse(article['similarity_score']?.toString() ?? '') ?? 0.0;
           final double normalized = (rawScore - 0.55) / 0.25;
-          final int matchPercent = rawScore > 0
+          int matchPercent = rawScore > 0
               ? ((normalized * 38) + 60).clamp(60, 98).toInt()
               : 0;
+
+          // おすすめタブで、履歴がない等の理由で similarity_score が 0.0 の場合でも、
+          // ユーザーにマッチ度をアピールするため初期ダミーマッチ度 (65%〜78%) を記事IDに基づいて一意に算出して表示
+          if (isRecommended && matchPercent == 0) {
+            final hash = articleId.hashCode.abs();
+            matchPercent = 65 + (hash % 14); // 65% 〜 78% の範囲で固定的にマッピング
+          }
 
           final isRead = _readArticleIds.contains(articleId);
 
@@ -560,36 +751,52 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
     return Scaffold(
-      appBar: AppBar(
-        title: Image.asset(
-          'assets/images/logo.png',
-          height: 30,
-          fit: BoxFit.contain,
-        ),
-        centerTitle: true,
-        backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
-        elevation: 0,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: const Color(0xFF00CC99),
-          unselectedLabelColor: isDark ? Colors.grey[400] : Colors.grey,
-          indicatorColor: const Color(0xFF00CC99),
-          indicatorWeight: 3,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          tabs: const [
-            Tab(text: 'すべて'),
-            Tab(text: 'おすすめ'),
-          ],
-        ),
-      ),
       body: Container(
         color: isDark ? const Color(0xFF12121A) : Colors.grey[50],
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            _buildArticleList(_allArticles, _isLoadingAll, _loadAllArticles),
-            _buildArticleList(_recommendedArticles, _isLoadingRecommended, _loadRecommendedArticles, isRecommended: true),
-          ],
+        child: NestedScrollView(
+          // スクロール時に AppBar を自動で折りたたんで隠し、タブを上部に固定する構造
+          headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+            return <Widget>[
+              SliverAppBar(
+                expandedHeight: 96.0, // ロゴの縦幅を十分に確保
+                floating: true,       // スクロールダウンで隠れ、少しのスクロールアップで再出現
+                pinned: true,         // タブバー（bottom）は画面上部に固定
+                snap: true,           // スナップイン動作
+                elevation: 0,
+                backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  titlePadding: const EdgeInsets.only(bottom: 48), // タブの上にロゴが重ならないように調整
+                  title: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 44), // 高さを30→44に引き上げてロゴを大幅拡大
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                bottom: TabBar(
+                  controller: _tabController,
+                  labelColor: const Color(0xFF00CC99),
+                  unselectedLabelColor: isDark ? Colors.grey[400] : Colors.grey,
+                  indicatorColor: const Color(0xFF00CC99),
+                  indicatorWeight: 3,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  tabs: const [
+                    Tab(text: 'すべて'),
+                    Tab(text: 'おすすめ'),
+                  ],
+                ),
+              ),
+            ];
+          },
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildArticleList(_allArticles, _isLoadingAll, _loadAllArticles),
+              _buildArticleList(_recommendedArticles, _isLoadingRecommended, _loadRecommendedArticles, isRecommended: true),
+            ],
+          ),
         ),
       ),
     );
@@ -598,7 +805,6 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   @override
   void dispose() {
     _tabController.dispose();
-    // 広告リソースの解放
     _adCache.values.forEach((ad) => ad.dispose());
     super.dispose();
   }
