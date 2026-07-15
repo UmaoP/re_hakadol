@@ -27,31 +27,37 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   // 広告用キャッシュと状態管理
   final Map<int, NativeAd> _adCache = {};
 
-  // ユーザーの興味にマッチさせるアフィリエイトPR記事の定義
+  // Amazonアソシエイト関連商品の定義 (game, tech, animeの3大ジャンル)
   final List<Map<String, dynamic>> _affiliateAds = [
     {
       'id': 'aff-1',
-      'title': '【注目！】事前登録で豪華特典が今すぐもらえる！大ヒット確実の最新ネオンアクションRPG [PR]',
-      'link': 'https://a8.net/dummy_game_campaign', // アフィリエイトURLのプレースホルダー
-      'image_url': 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=200', 
-      'source_name': '注目ゲーム事前登録',
+      'title': '【最新モデル】PlayStation 5 (CFI-2000A01) 大ヒットゲーム同梱限定セット [PR]',
+      'link': 'https://www.amazon.co.jp/dp/B0CL5N529B?tag=hakadollre-22', // AmazonアソシエイトURL (プレースホルダーID)
+      'image_url': 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=200', 
+      'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
+      'category': 'game',
+      'price': '￥59,980',
     },
     {
       'id': 'aff-2',
-      'title': '【AIで爆速開発】プログラミング作業が3倍効率化する最新のAIコードアシスタントツール [PR]',
-      'link': 'https://a8.net/dummy_ai_ide',
-      'image_url': 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=200', 
-      'source_name': 'AIテック開発ツール',
+      'title': '【プログラミング効率向上】ロジクール MX KEYS mini ワイヤレス イルミネイテッド キーボード [PR]',
+      'link': 'https://www.amazon.co.jp/dp/B09J8S2C69?tag=hakadollre-22', 
+      'image_url': 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=200', 
+      'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
+      'category': 'tech',
+      'price': '￥15,900',
     },
     {
       'id': 'aff-3',
-      'title': '【今だけ最大70%OFF】アニメ化記念セール開催！話題の大人気コミックが全巻お得に読める [PR]',
-      'link': 'https://a8.net/dummy_manga_sale',
+      'title': '【コミック全巻セット】チェンソーマン コミックス 1-16巻セット（最新刊まで一気読み） [PR]',
+      'link': 'https://www.amazon.co.jp/dp/B0CJR7MX8Z?tag=hakadollre-22', 
       'image_url': 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200', 
-      'source_name': 'コミック特別セール',
+      'source_name': 'Amazon.co.jp',
       'published_at': DateTime.now().toIso8601String(),
+      'category': 'anime',
+      'price': '￥8,200',
     },
   ];
 
@@ -75,11 +81,11 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     }
 
     if (techCount >= gameCount && techCount >= animeCount) {
-      return _affiliateAds[1]; // テック系アフィリエイト
+      return _affiliateAds[1]; // テック系アフィリエイト (キーボード)
     } else if (animeCount >= gameCount && animeCount >= techCount) {
-      return _affiliateAds[2]; // アニメ系アフィリエイト
+      return _affiliateAds[2]; // アニメ系アフィリエイト (コミックセット)
     } else {
-      return _affiliateAds[0]; // ゲーム系アフィリエイト (デフォルト)
+      return _affiliateAds[0]; // ゲーム系アフィリエイト (PS5) (デフォルト)
     }
   }
 
@@ -129,6 +135,35 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   Future<void> _loadRecommendedArticles() async {
     setState(() => _isLoadingRecommended = true);
     final articles = await _supabaseService.fetchRecommendedArticles();
+    
+    // クライアント側で記事リストを「マッチ度（%）」の降順で明示的にソート
+    // これにより、履歴がある場合も初期状態（ダミーマッチ度）の場合も、常にマッチ率の高い順に上から並ぶことを保証します
+    articles.sort((a, b) {
+      final aRaw = double.tryParse(a['similarity_score']?.toString() ?? '') ?? 0.0;
+      final bRaw = double.tryParse(b['similarity_score']?.toString() ?? '') ?? 0.0;
+      
+      int aMatch = 0;
+      int bMatch = 0;
+
+      // 1. similarity_score に基づくマッチ率算出
+      if (aRaw > 0) {
+        final double norm = (aRaw - 0.55) / 0.25;
+        aMatch = ((norm * 38) + 60).clamp(60, 98).toInt();
+      } else {
+        // 初期ダミーマッチ度の算出 (IDハッシュから一意)
+        aMatch = 65 + (a['id'].toString().hashCode.abs() % 14);
+      }
+
+      if (bRaw > 0) {
+        final double norm = (bRaw - 0.55) / 0.25;
+        bMatch = ((norm * 38) + 60).clamp(60, 98).toInt();
+      } else {
+        bMatch = 65 + (b['id'].toString().hashCode.abs() % 14);
+      }
+
+      return bMatch.compareTo(aMatch); // 降順ソート
+    });
+
     setState(() {
       _recommendedArticles = articles;
       _isLoadingRecommended = false;
@@ -367,7 +402,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
     );
   }
 
-  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用)
+  // 溶け込みアフィリエイト案件の構築 (おすすめタブ用 - Amazonアソシエイト関連商品)
   Widget _buildAffiliateCard(int index) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final affiliate = _getBestAffiliate();
@@ -448,13 +483,13 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF4A1E1E) : const Color(0xFFFFECEC),
+                                  color: isDark ? const Color(0xFF1F3D5A) : const Color(0xFFE6F2FF),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
                                   affiliate['source_name'] ?? '',
                                   style: TextStyle(
-                                    color: isDark ? const Color(0xFFFF6B6B) : const Color(0xFFD32F2F),
+                                    color: isDark ? const Color(0xFF3399FF) : const Color(0xFF0066CC),
                                     fontSize: 9,
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -462,28 +497,35 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                '本日掲載',
-                                style: TextStyle(
-                                  color: isDark ? Colors.grey[500] : Colors.grey[600],
-                                  fontSize: 10,
+                                affiliate['price'] ?? '',
+                                style: const TextStyle(
+                                  color: Color(0xFFD32F2F),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
-                          // アフィリエイト用の特別な誘導バッジ
+                          // Amazonアソシエイト用の特別な誘導ボタン (オレンジカラー)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF00CC99),
+                              color: const Color(0xFFFF9900), // Amazon オレンジ
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: const Text(
-                              '詳細を見る',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.shopping_cart, color: Colors.white, size: 10),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Amazonで見る',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -555,10 +597,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           // 10記事ごとの差し込み位置
           if (index % (adInterval + 1) == adInterval) {
             if (isRecommended) {
-              // おすすめタブではAdMobの代わりにアフィリエイトPR記事を挿入
               return _buildAffiliateCard(index);
             } else {
-              // すべてタブでは通常のアドモブ広告を挿入
               _loadAdForIndex(index);
               return _buildAdCard(index);
             }
