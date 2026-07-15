@@ -563,7 +563,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
       appBar: AppBar(
         title: Image.asset(
           'assets/images/logo.png',
-          height: 38,
+          height: 30,
           fit: BoxFit.contain,
         ),
         centerTitle: true,
