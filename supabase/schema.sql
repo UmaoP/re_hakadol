@@ -32,11 +32,16 @@ returns setof articles as $$
 declare
   user_profile_vector vector(384);
 begin
-  -- 1. ユーザーの閲覧履歴から、最近のアクションの平均ベクトルを算出
+  -- 1. ユーザーの閲覧履歴から、直近30件のアクションの平均ベクトルを算出
   select avg(a.embedding)::vector(384) into user_profile_vector
-  from user_history h
-  join articles a on h.article_id = a.id
-  where h.user_id = user_uuid;
+  from (
+    select article_id 
+    from user_history 
+    where user_id = user_uuid 
+    order by created_at desc 
+    limit 30
+  ) h
+  join articles a on h.article_id = a.id;
 
   -- 2. 履歴が空（新規ユーザー）の場合は、新着順で降順表示
   if user_profile_vector is null then

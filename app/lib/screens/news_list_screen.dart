@@ -52,7 +52,18 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
   }
 
   Future<void> _openArticle(Map<String, dynamic> article) async {
-    final url = Uri.parse(article['link']);
+    final urlString = article['link'] ?? '';
+    if (urlString.isEmpty) return;
+
+    final url = Uri.tryParse(urlString);
+    if (url == null || !(url.scheme == 'http' || url.scheme == 'https')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('無効なURLリンクです。')),
+        );
+      }
+      return;
+    }
     
     // 閲覧ログの送信（非同期）
     _supabaseService.logArticleView(article['id']);

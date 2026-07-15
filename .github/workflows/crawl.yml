@@ -22,12 +22,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # CPU専用のPyTorchをインストールして、ディスク消費量とビルド時間を節約します
+          pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
           if [ -f crawler/requirements.txt ]; then pip install -r crawler/requirements.txt; fi
 
       - name: Run Crawler
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python crawler/crawler.py

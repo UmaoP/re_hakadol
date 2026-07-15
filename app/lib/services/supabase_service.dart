@@ -7,10 +7,17 @@ class SupabaseService {
 
   SupabaseClient get client => Supabase.instance.client;
 
-  /// 匿名サインインを実行し、Userを返します。
+  /// 匿名サインインを実行し、Userを返します。既存のセッションがあれば再利用します。
   Future<User?> signInAnonymously() async {
     try {
+      final currentUser = client.auth.currentUser;
+      if (currentUser != null) {
+        print('既存のログインセッションを再利用します: ${currentUser.id}');
+        return currentUser;
+      }
+      
       final response = await client.auth.signInAnonymously();
+      print('新規に匿名サインインしました: ${response.user?.id}');
       return response.user;
     } catch (e) {
       print('匿名認証エラー: $e');

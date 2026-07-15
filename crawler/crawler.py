@@ -6,18 +6,20 @@ import feedparser
 from dotenv import load_dotenv
 import requests
 from supabase import create_client, Client
-from huggingface_hub import InferenceClient
+from sentence_transformers import SentenceTransformer
 
 # 環境変数の読み込み（ローカル開発用）
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-HF_TOKEN = os.getenv("HF_TOKEN")
 
 # 定数定義
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/intfloat/multilingual-e5-small"
 MODEL_DIMENSION = 384
+
+# ローカルで利用する埋め込みモデルの初期化（初回起動時に自動ダウンロード）
+print("ローカル埋め込みモデル（intfloat/multilingual-e5-small）を読み込んでいます...")
+EMBEDDING_MODEL = SentenceTransformer("intfloat/multilingual-e5-small")
 
 # RSSフィードの配信元リスト
 RSS_FEEDS = [
@@ -152,85 +154,27 @@ def filter_new_articles(supabase_client: Client, articles: list) -> list:
     print(f"取得した記事数: {len(articles)} 件, 新着記事数: {len(new_articles)} 件")
     return new_articles
 
-def generate_embedding(text: str, token: str) -> list:
-    """Hugging Face Inference API を使用して、テキストのベクトル表現を生成します。"""
-    import random
-    
-    # ローカルデバッグ用、またはトークン未設定時のフォールバック
-    if token == "debug" or not token:
-        # e5モデルは正規化されたベクトルを出力するため、小さなランダム値を使用
-        return [random.uniform(-0.1, 0.1) for _ in range(MODEL_DIMENSION)]
+def generate_embeddings_batch(articles: list) -> list:
+    """ローカルの sentence-transformers を使用して、記事リストのタイトルを一括でベクトル表現に変換します。"""
+    if not articles:
+        return []
         
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {"inputs": text}
+    titles = [f"passage: {a['title']}" for a in articles]
+    print(f"記事タイトルの一括ベクトル化（バッチ処理）を開始します... (対象: {len(titles)} 件)")
     
-    # API呼び出し（リトライ処理付き）
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=15)
+    try:
+        # 一括エンコードを実行（確実に numpy 配列で取得）
+        embeddings = EMBEDDING_MODEL.encode(titles, convert_to_numpy=True, show_progress_bar=False)
+        for idx, embedding in enumerate(embeddings):
+            # ndarray から標準の Python list[float] に変換してシリアライズエラーを防ぐ
+            articles[idx]["embedding"] = embedding.tolist()
+    except Exception as e:
+        print(f"エラー: 一括ベクトル化に失敗しました。フォールバックとしてダミーベクトルを使用します。 {e}")
+        import random
+        for article in articles:
+            article["embedding"] = [random.uniform(-0.1, 0.1) for _ in range(MODEL_DIMENSION)]
             
-            # 502/503エラーはモデルのロード中や一時的な過負荷の可能性があるためリトライ
-            if response.status_code in [502, 503]:
-                wait_time = 5
-                if response.status_code == 503:
-                    try:
-                        wait_time = response.json().get("estimated_time", 5)
-                    except Exception:
-                        pass
-                print(f"一時的なサーバーエラー ({response.status_code})... {wait_time}秒待機します (試行 {attempt + 1}/{max_retries})")
-                time.sleep(min(wait_time, 20))
-                continue
-                
-            if response.status_code != 200:
-                print(f"APIエラー詳細 (ステータス {response.status_code}): {response.text}")
-                
-            response.raise_for_status()
-            output = response.json()
-            return mean_pooling(output)
-            
-        except Exception as e:
-            print(f"警告: embedding生成に失敗しました (試行 {attempt + 1}/{max_retries})。 {e}")
-            if attempt < max_retries - 1:
-                time.sleep(5)
-            else:
-                # すべてのリトライが失敗した場合、ローカルテスト継続のためにダミーベクトルでフォールバック
-                print("警告: すべてのAPI試行が失敗しました。開発継続のため、この記事にはダミーのベクトルを設定します。")
-                return [random.uniform(-0.1, 0.1) for _ in range(MODEL_DIMENSION)]
-                
-    return [random.uniform(-0.1, 0.1) for _ in range(MODEL_DIMENSION)]
-
-def mean_pooling(model_output) -> list:
-    """Inference APIの出力形式を解析し、384次元の平均プーリングベクトルを返します。"""
-    if isinstance(model_output, list) and len(model_output) > 0:
-        # 3次元: [[[f1, f2, ...]]] (トークンごとの埋め込み)
-        if isinstance(model_output[0], list) and len(model_output[0]) > 0:
-            if isinstance(model_output[0][0], list):
-                tokens_embeddings = model_output[0]
-                num_tokens = len(tokens_embeddings)
-                embedding_dim = len(tokens_embeddings[0])
-                
-                # 384次元かチェック
-                if embedding_dim != MODEL_DIMENSION:
-                    print(f"警告: 埋め込み次元数が {embedding_dim} です。期待値は {MODEL_DIMENSION} です。")
-                
-                mean_embedding = [0.0] * embedding_dim
-                for token in tokens_embeddings:
-                    for i in range(embedding_dim):
-                        mean_embedding[i] += token[i]
-                for i in range(embedding_dim):
-                    mean_embedding[i] /= num_tokens
-                return mean_embedding
-                
-            # 2次元: [[f1, f2, ...]]
-            elif isinstance(model_output[0], (float, int)):
-                return model_output[0]
-                
-        # 1次元: [f1, f2, ...]
-        elif isinstance(model_output[0], (float, int)):
-            return model_output
-            
-    raise ValueError(f"予期しないEmbedding出力形式です。: {type(model_output)}")
+    return articles
 
 def cleanup_old_articles(supabase_client: Client, days: int = 14):
     """指定された日数より前の古い記事を削除して、データベースの容量を節約します。"""
@@ -251,8 +195,12 @@ def main():
     # 接続初期化
     supabase_client = init_supabase()
     
-    # 古い記事のクリーンアップを実行（無料枠維持のため）
-    cleanup_old_articles(supabase_client)
+    # 古い記事のクリーンアップを実行（無料枠維持のため、負荷軽減として約10%の確率で実行）
+    import random
+    if random.random() < 0.1:
+        cleanup_old_articles(supabase_client)
+    else:
+        print("今回の起動ではクリーンアップ処理をスキップします（データベース負荷削減のため）。")
     
     # RSSフィードから最新記事を取得
     all_articles = fetch_rss_articles(RSS_FEEDS)
@@ -264,26 +212,17 @@ def main():
         print("追加する新しい記事はありません。終了します。")
         return
         
-    print(f"{len(new_articles)} 件の新着記事のベクトル化と登録を開始します。")
+    # ベクトル化を一括実行
+    new_articles = generate_embeddings_batch(new_articles)
+    
+    print(f"{len(new_articles)} 件の新着記事を Supabase に登録します。")
     
     success_count = 0
     for idx, article in enumerate(new_articles):
-        # E5モデルの仕様に合わせ、入力文字列の先頭に "passage: " を付与
-        input_text = f"passage: {article['title']}"
-        
         try:
-            print(f"[{idx + 1}/{len(new_articles)}] ベクトル生成中: {article['title']}")
-            # 埋め込み生成
-            embedding = generate_embedding(input_text, HF_TOKEN)
-            article["embedding"] = embedding
-            
             # Supabaseに挿入（UPSERT）
             supabase_client.table("articles").upsert(article, on_conflict="link").execute()
             success_count += 1
-            
-            # APIの負荷軽減・レートリミット対策のための短いウェイト
-            time.sleep(0.5)
-            
         except Exception as e:
             print(f"エラー: 記事「{article['title']}」の登録に失敗しました。{e}")
             
