@@ -182,6 +182,9 @@ def generate_embedding(text: str, token: str) -> list:
                 time.sleep(min(wait_time, 20))
                 continue
                 
+            if response.status_code != 200:
+                print(f"APIエラー詳細 (ステータス {response.status_code}): {response.text}")
+                
             response.raise_for_status()
             output = response.json()
             return mean_pooling(output)
