@@ -99,6 +99,24 @@ def get_image_url(entry) -> str:
                 return link.get('href')
     return None
 
+def get_ogp_image(url: str) -> str:
+    """指定された記事URLの HTML から og:image メタタグを抽出します。"""
+    try:
+        response = requests.get(
+            url, 
+            timeout=5, 
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        )
+        if response.status_code == 200:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+            og_image = soup.find('meta', property='og:image')
+            if og_image and og_image.get('content'):
+                return og_image.get('content')
+    except Exception:
+        pass
+    return None
+
 def parse_published_time(entry) -> datetime:
     """エントリーの公開日時をパースし、UTCのdatetimeオブジェクトを返します。"""
     if hasattr(entry, 'published_parsed') and entry.published_parsed:
@@ -117,7 +135,12 @@ def fetch_rss_articles(feeds) -> list:
             parsed = feedparser.parse(feed['url'])
             for entry in parsed.entries:
                 published_at = parse_published_time(entry)
+                
+                # 画像の抽出
                 image_url = get_image_url(entry)
+                if not image_url and hasattr(entry, 'link'):
+                    # RSSから取れない場合は、バックグラウンドで記事ページから OGP 画像のスクレイピングを試みる
+                    image_url = get_ogp_image(entry.link)
                 
                 articles.append({
                     "title": entry.title,

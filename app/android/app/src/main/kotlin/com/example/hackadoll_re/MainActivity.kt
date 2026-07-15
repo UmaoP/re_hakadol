@@ -1,4 +1,4 @@
-package com.example.re_hakadol.re_hakadol_app
+package com.example.hackadoll_re
 
 import io.flutter.embedding.android.FlutterActivity
 

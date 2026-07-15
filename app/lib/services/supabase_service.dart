@@ -67,12 +67,23 @@ class SupabaseService {
     }
   }
 
-  /// 記事の閲覧履歴を登録します。
+  /// 記事の閲覧履歴を登録します。すでに登録済みの場合は重複を避けるため登録しません。
   Future<void> logArticleView(String articleId) async {
     final userId = currentUserId;
     if (userId == null) return;
 
     try {
+      // 既に履歴が存在するか確認
+      final existing = await client
+          .from('user_history')
+          .select()
+          .eq('user_id', userId)
+          .eq('article_id', articleId)
+          .limit(1)
+          .maybeSingle();
+
+      if (existing != null) return; // 既にread/like等が存在すればスキップ
+
       await client.from('user_history').insert({
         'user_id': userId,
         'article_id': articleId,
@@ -80,6 +91,88 @@ class SupabaseService {
       });
     } catch (e) {
       print('履歴保存エラー: $e');
+    }
+  }
+
+  /// お気に入りのトグル（すでにお気に入りされていれば削除、されていなければ追加）
+  Future<bool> toggleLikeArticle(String articleId) async {
+    final userId = currentUserId;
+    if (userId == null) return false;
+
+    try {
+      final existing = await client
+          .from('user_history')
+          .select()
+          .eq('user_id', userId)
+          .eq('article_id', articleId)
+          .eq('action_type', 'like')
+          .maybeSingle();
+
+      if (existing != null) {
+        // お気に入り解除
+        await client
+            .from('user_history')
+            .delete()
+            .eq('id', existing['id']);
+        return false; // お気に入り解除された
+      } else {
+        // お気に入り登録
+        await client.from('user_history').insert({
+          'user_id': userId,
+          'article_id': articleId,
+          'action_type': 'like',
+        });
+        return true; // お気に入り登録された
+      }
+    } catch (e) {
+      print('お気に入りトグルエラー: $e');
+      return false;
+    }
+  }
+
+  /// 興味なし（dislike）に登録します（既存の閲覧履歴があれば削除）
+  Future<void> dislikeArticle(String articleId) async {
+    final userId = currentUserId;
+    if (userId == null) return;
+
+    try {
+      // 既存の閲覧・お気に入り履歴があれば削除
+      await client
+          .from('user_history')
+          .delete()
+          .eq('user_id', userId)
+          .eq('article_id', articleId);
+
+      // 新しく「興味なし」アクションを挿入
+      await client.from('user_history').insert({
+        'user_id': userId,
+        'article_id': articleId,
+        'action_type': 'dislike',
+      });
+    } catch (e) {
+      print('興味なし登録エラー: $e');
+    }
+  }
+
+  /// ユーザーがお気に入りした記事のIDセットを取得します。
+  Future<Set<String>> fetchLikedArticleIds() async {
+    final userId = currentUserId;
+    if (userId == null) return {};
+
+    try {
+      final response = await client
+          .from('user_history')
+          .select('article_id')
+          .eq('user_id', userId)
+          .eq('action_type', 'like');
+      
+      final ids = List<Map<String, dynamic>>.from(response)
+          .map((row) => row['article_id'].toString())
+          .toSet();
+      return ids;
+    } catch (e) {
+      print('お気に入り一覧取得エラー: $e');
+      return {};
     }
   }
 }

@@ -32,17 +32,44 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ハッカドール再現',
+      title: 'ハッカドール：Re',
       theme: ThemeData(
         useMaterial3: true,
+        brightness: Brightness.light,
         primaryColor: const Color(0xFF00CC99),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF00CC99),
+          brightness: Brightness.light,
           primary: const Color(0xFF00CC99),
-          secondary: const Color(0xFF00CC99),
+          secondary: const Color(0xFF009973),
+          surface: Colors.white,
         ),
-        scaffoldBackgroundColor: Colors.white,
+        scaffoldBackgroundColor: Colors.grey[50],
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 1,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
       ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        primaryColor: const Color(0xFF00CC99),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF00CC99),
+          brightness: Brightness.dark,
+          primary: const Color(0xFF00CC99),
+          secondary: const Color(0xFF009973),
+          surface: const Color(0xFF1E1E2E),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF12121A),
+        cardTheme: CardThemeData(
+          color: const Color(0xFF1E1E2E),
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
+      themeMode: ThemeMode.system, // システムのダークモード設定に自動連動
       home: const NewsListScreen(),
     );
   }
