@@ -16,7 +16,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # 定数定義
-HF_API_URL = "https://api-inference.huggingface.co/pipeline/feature-extraction/intfloat/multilingual-e5-small"
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/intfloat/multilingual-e5-small"
 MODEL_DIMENSION = 384
 
 # RSSフィードの配信元リスト
