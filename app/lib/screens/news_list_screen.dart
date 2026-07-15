@@ -185,7 +185,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                               ),
                             ),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.between,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

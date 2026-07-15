@@ -10,11 +10,11 @@ void main() async {
   // 下記の値を直接書き換えて使用します。
   const supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://your-supabase-project.supabase.co',
+    defaultValue: 'https://wybgkuqyvrybufwgxyoc.supabase.co',
   );
   const supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'your-supabase-anon-key',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5YmdrdXF5dnJ5YnVmd2d4eW9jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwODg2NzUsImV4cCI6MjA5OTY2NDY3NX0.-0LVf3-7Hn35bWK1J91DoA5e0-CSEZROuuSUEiNdHhE',
   );
 
   // Supabaseの初期化
