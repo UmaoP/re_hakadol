@@ -922,10 +922,11 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
                 pinned: true,         
                 snap: true,           
                 elevation: 0,
+                toolbarHeight: 76.0, 
                 backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
                 title: Image.asset(
                   'assets/images/logo.png',
-                  height: 42,
+                  height: 60, // ロゴを極限まで拡大
                   fit: BoxFit.contain,
                 ),
                 centerTitle: true,
