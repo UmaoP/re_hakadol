@@ -5,7 +5,9 @@ import 'screens/news_list_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await MobileAds.instance.initialize();
+  
+  // AdMobの初期化は起動スレッドをブロックしないように非同期で開始
+  MobileAds.instance.initialize();
 
   // 環境変数またはプレースホルダーから設定を読み込みます
   // 実行時（ビルド時）に --dart-define=SUPABASE_URL=xxx --dart-define=SUPABASE_ANON_KEY=xxx を指定するか、
