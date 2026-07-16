@@ -12,6 +12,7 @@ class NewsListScreen extends StatefulWidget {
 }
 
 class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProviderStateMixin {
+  static const bool _enableAds = false; // 将来の復活を考慮した広告・アフィリエイト表示フラグ（個人利用時はfalse）
   late TabController _tabController;
   final SupabaseService _supabaseService = SupabaseService();
   
@@ -126,6 +127,7 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
   // 特定インデックス用のインフィード広告をロード・キャッシュ
   void _loadAdForIndex(int index) {
+    if (!_enableAds) return; // 広告が無効化されている場合は何もしない
     if (_adCache.containsKey(index)) return;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -704,7 +706,9 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
 
     // 10記事ごとに広告またはアフィリエイトを差し込むための計算
     const adInterval = 10; 
-    final totalItems = articles.length + (articles.length ~/ adInterval);
+    final totalItems = _enableAds
+        ? articles.length + (articles.length ~/ adInterval)
+        : articles.length;
 
     return RefreshIndicator(
       color: const Color(0xFF00CC99),
@@ -714,8 +718,8 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
         padding: const EdgeInsets.all(8.0),
         itemCount: totalItems,
         itemBuilder: (context, index) {
-          // 10記事ごとの差し込み位置
-          if (index % (adInterval + 1) == adInterval) {
+          // 広告機能が有効で、かつ10記事ごとの差し込み位置に達した場合のみ表示
+          if (_enableAds && index % (adInterval + 1) == adInterval) {
             if (isRecommended) {
               return _buildAffiliateCard(index, articles);
             } else {
@@ -725,7 +729,9 @@ class _NewsListScreenState extends State<NewsListScreen> with SingleTickerProvid
           }
 
           // 差し込みによる記事インデックスの調整
-          final articleIndex = index - (index ~/ (adInterval + 1));
+          final articleIndex = _enableAds
+              ? index - (index ~/ (adInterval + 1))
+              : index;
           
           if (articleIndex >= articles.length) {
             return const SizedBox.shrink();
