@@ -74,6 +74,22 @@ RSS_FEEDS = [
     {
         "name": "AUTOMATON",
         "url": "https://automaton-media.com/feed/"
+    },
+    {
+        "name": "netkeiba",
+        "url": "https://rss.netkeiba.com/?pid=rss_netkeiba&site=netkeiba"
+    },
+    {
+        "name": "Yahoo!ニュース 競馬",
+        "url": "https://news.yahoo.co.jp/rss/topics/keiba.xml"
+    },
+    {
+        "name": "はてなブックマーク (おもしろ)",
+        "url": "https://b.hatena.ne.jp/hotentry/fun.rss"
+    },
+    {
+        "name": "電ファミニコゲーマー",
+        "url": "https://news.denfaminicogamer.jp/feed"
     }
 ]
 
